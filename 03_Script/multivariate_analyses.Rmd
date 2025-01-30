@@ -1,0 +1,357 @@
+---
+title: "Cluster analysis of neuronal properties."
+subtitle: "Multivariate analyses."
+author:
+- Thomas Vannier
+date: "`r format(Sys.time(), '%d %B %Y')`"
+output:
+    html_document:
+        theme:
+            bootswatch: yeti
+        toc: yes
+        toc_float:
+          collapsed: false
+          smooth_scroll: true
+        number_sections: yes
+        df_print: kable
+        code_folding: hide
+---
+
+<!-- Javascript for zooming on figures (adapted from: https://stackoverflow.com/questions/40401680) -->
+
+<!-- Jquery import conflicts with DT::datatable so needs to be commented here -->
+<!-- <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script> -->
+
+<style>
+.zoomDiv {
+  display: none;
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 50;
+  transform: translate(-50%, -50%);
+  background-color: #FFFFFF;
+  box-shadow: 0px 0px 50px #888888;
+  width: fit-content;
+  max-width: 90%;
+  max-height: 90%;
+  overflow: auto;
+}
+
+.zoomImg {
+  width: 150%;
+}
+</style>
+
+<script type="text/javascript">
+  $(document).ready(function() {
+    $('body').prepend("<div class=\"zoomDiv\"><img src=\"\" class=\"zoomImg\"></div>");
+    // onClick for all img except the zoomed one and link ones (filter)
+    // use 'img.zoom' and out.extra='class=\"zoom\"' in chunk to specify manually which chunk images can be zoomed
+    $('img:not(.zoomImg)').filter(':not(a *)').click(function() {
+      $('.zoomImg').attr('src', $(this).attr('src'));
+      $('.zoomDiv').show();
+    })
+    // onClick function for hiding div
+    $('img.zoomImg').click(function() {
+      $('.zoomDiv').hide();
+    })
+  })
+</script>
+
+# This report present analyses to select the most relevant quantitative variables for clustering that would correspond to morphological classes.
+
+```{r setup, warnings=F}
+knitr::opts_chunk$set(echo = TRUE, error = TRUE)
+```
+
+```{r loadLibraries, echo=TRUE, warning=TRUE, message=TRUE}
+
+# Loading library
+library(ggplot2)
+library(reshape2)
+library(ggsignif)
+library(caret)
+library(rmarkdown)
+library(tidyverse)
+library(stringr)
+library(tinytex)
+library(knitr)
+library(FactoMineR)
+library(factoextra)
+library(gridExtra)
+library(grid)
+library(plotly)
+```
+
+# Load the data
+
+Summary of your data.
+
+```{r loadData, echo=FALSE, warning=TRUE, message=TRUE}
+# Load the 4 times merged dataset
+DATA = snakemake@input[["data"]]
+OUTPUT = snakemake@output[["multivariate_analyses_output"]]
+
+# Load your data
+data <- read.csv(DATA, sep="\t", header=TRUE, row.names=1)
+
+# Remove the second column
+data <- data[,-1]
+
+# Preserve the "Morphology" row
+morphology_row <- data["Morphology", , drop = FALSE]
+# Remove the row with the row name "Morphology"
+data <- data[!rownames(data) %in% "Morphology", ]
+# Convert all columns to numeric
+data[] <- lapply(data, function(x) as.numeric(as.character(x)))
+preProcess_missingdata <- preProcess(data, method = 'medianImpute')
+data_imputed <- predict(preProcess_missingdata, data)
+
+# Bind the "Morphology" row back with the imputed data
+data_final <- rbind(morphology_row, data_imputed)
+
+# Transpose the final data
+t_data_final <- t(data_final)
+
+# Convert the transposed data frame to ensure appropriate types
+t_data_final <- as.data.frame(t_data_final, stringsAsFactors = FALSE)
+
+# Convert "Morphology" column to factor
+t_data_final$Morphology <- factor(t_data_final$Morphology)
+
+# Convert all other columns to numeric
+for (col in colnames(t_data_final)[colnames(t_data_final) != "Morphology"]) {
+  t_data_final[, col] <- as.numeric(t_data_final[, col])
+}
+
+summary(t_data_final)
+
+```
+
+# Normality test
+
+Perform a Shapiro-Wilk test to check and print whether each numeric column in t_data_final follows a normal distribution (n = 55)
+
+```{r normality, echo=FALSE, warning=TRUE, message=TRUE}
+
+## Test the normality of the dependant variables
+# Extract numeric columns (excluding "Morphology")
+numeric_columns <- t_data_final[, colnames(t_data_final) != "Morphology"]
+
+# Perform Shapiro-Wilk test on each numeric column
+shapiro_results <- apply(numeric_columns, 2, shapiro.test)
+
+# Identify columns that follow a normal distribution (p > 0.05)
+normal_columns <- sapply(shapiro_results, function(x) x$p.value > 0.05)
+
+# Filter the numeric columns that follow a normal distribution
+numeric_columns_normal <- numeric_columns[, normal_columns]
+
+# Combine back with the "Morphology" column
+t_data_final_filtered <- cbind(Morphology = t_data_final[, "Morphology"], numeric_columns_normal)
+
+# Print the result
+cat("Variables that follow a normal distribution:\n")
+print(colnames(numeric_columns_normal))
+```
+
+# Anova test
+One-way Anova : testing differences between groups based on one independent variable (morphology).
+```{r anova, echo=FALSE, warning=TRUE, message=TRUE}
+
+# Extract column names for quantitative variables
+quantitative_columns <- colnames(t_data_final_filtered)[-1]
+
+# Initialize a list to store p-values
+anova_pvalues <- list()
+
+# Function to perform one-way ANOVA
+perform_anova <- function(dependent_var, data, independent_var) {
+  # Build the formula
+  formula <- as.formula(paste(dependent_var, "~", independent_var))
+  # Perform ANOVA
+  anova_result <- aov(formula, data = data)
+  # Extract the p-value
+  p_value <- summary(anova_result)[[1]][["Pr(>F)"]][1]
+  return(p_value)
+}
+
+# Iterate through each quantitative column, perform ANOVA, and store p-values
+for (quant_col in quantitative_columns) {
+  cat("\nANOVA Results for:", quant_col, " (p-value)\n")
+  print(perform_anova(quant_col, t_data_final_filtered, colnames(t_data_final_filtered)[1]))
+  p_value <- perform_anova(quant_col, t_data_final_filtered, colnames(t_data_final_filtered)[1])
+  anova_pvalues[[quant_col]] <- p_value
+}
+
+# Filter columns with significant p-values (e.g., p < 0.05)
+relevant_columns <- names(anova_pvalues)[unlist(anova_pvalues) < 0.05]
+
+# Keep only relevant columns in the filtered dataset
+t_data_final_relevant <- t_data_final_filtered[, c("Morphology", relevant_columns)]
+
+# Print results
+cat("Relevant columns for clustering:\n")
+print(relevant_columns)
+
+```
+
+# Dimensionality Reduction with FAMD
+
+Factor analysis of mixed data (FAMD) is a principal component method
+dedicated to analyze a data set containing both quantitative and qualitative
+variables. It makes it possible to analyze the similarity between
+individuals by taking into account a mixed types of variables. Additionally, 
+one can explore the association between all variables, both quantitative and 
+qualitative variables.
+
+We can first inspect the calculated principal dimensions (PDs), which are linear 
+combinations of the original variables to better account for the variance in the dataset. 
+Inspecting the eigenvalue and percentage variance explained by each PD, using scree plots, 
+can provide insights into the “informativeness” of the original variables.
+
+```{r famd, echo=FALSE, warning=TRUE, message=TRUE}
+data <- t_data_final
+# write.table(data, "./data_table.txt", sep = "\t", row.names = TRUE, col.names = TRUE, quote = FALSE)
+
+# Perform FAMD
+res.famd <- FAMD(data, graph = FALSE)
+
+## Visualize
+a <- fviz_eig(res.famd,  
+              choice='eigenvalue', 
+              geom='line') 
+
+b <- fviz_eig(res.famd) 
+  
+grid.arrange(a, b, ncol=2)
+
+```
+
+# Plot individual observations in new feature space
+
+We can now visualize the individual data points in the 
+new feature space created by the first three, and thus 
+“most informative”, PDs. This is particularly useful when 
+we want to see how “separable” groups of data points are, 
+in our case in terms of morphology. To this end, the points are 
+coloured by the variable “morphology”.
+
+```{r ind_obs, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+
+## Concate original data with coordinates for 
+## the first three principal dimensions
+val_df <- as.data.frame(res.famd$ind)
+
+x <- cbind(data, val_df[1:3])
+
+## Plot
+plot_ly(x, 
+        x = ~coord.Dim.1, 
+        y = ~coord.Dim.2, 
+        z = ~coord.Dim.3, 
+        color = ~Morphology) 
+
+```
+
+# Variable contribution
+
+Contribution describes how much a variable accounts for the 
+total variation captured by a given PD.
+
+Top contributing variables to the first few PDs can provide 
+insights into which variables underlie variations in the dataset, 
+and may help with feature selection for downstream analyses. 
+The red dashed line indicates the expected average contribution 
+(100% contribution divided the total number of variables avaiable 
+in the dataset). So variables meeting the cut-off would be considered 
+as important in contributing to the PD.
+
+```{r contribution, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+
+print("Visualization of the contribution of different modalities to the axis with the most amont of variance.")
+
+# Contribution to the first dimension
+fviz_contrib(res.famd, "var", axes = 1)
+# Contribution to the second dimension
+fviz_contrib(res.famd, "var", axes = 2)
+
+```
+
+# Correlation circle
+
+As principal dimensions are linear combinations of the original variables,
+understanding their relationships can help to identify
+which variables are the most important in describing the 
+total variance in a dataset.
+
+The factor loading of a variable describes the correlation, i.e. information shared, 
+between it and a given PD. By squaring the factor loading for a variable, we also get 
+its squared loading (which you may see also called squared cosine or cos2). 
+This provides a measure of the proportion of variance in a variable that is 
+captured by a particular PD. For each variable, the sum of its squared loading 
+across all PDs equals to 1.
+
+```{r correlation, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+
+quanti.var <- get_famd_var(res.famd, "quanti.var")
+
+fviz_famd_var(res.famd, "quanti.var", col.var = "contrib", 
+             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             repel = TRUE)
+
+```
+
+# Squared loading Plot
+
+Squared loading plots allow us to visualize qualitative and quantitative 
+variables together in the new feature space. 
+The implementation provided by the PCAmixdata package has an 
+added benefit of allowing the Morphology variable to be included as 
+a supplementary variable, thereby seeing its relationship with 
+other variables without including it in the original analysis. 
+This is useful as most downstream analyses would try to predict Morphology.
+
+```{r squared, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+## Import library
+library(PCAmixdata)
+## Split quantitative and qualitative variables
+split <- splitmix(data)
+res.pcamix <- PCAmix(X.quanti=split$X.quanti, X.quali=split$X.quali,  
+                     graph=FALSE)
+
+# X1sup <- data[,1,drop=FALSE]
+# res.sup <- supvar(res.pcamix,X.quanti.sup = NULL, X.quali.sup = X1sup,rename.level=TRUE)
+
+print(res.pcamix$quali$contrib)
+
+
+# print(res.sup$quanti$cos2[,1:2])
+# print(res.sup$levels.sup$cos2[,1:2])
+
+
+## Colour indiv obs by their squared loading
+p <- fviz_famd_var(res.famd, 'var', 
+                   axes = c(1, 2),
+                   col.var = 'cos2')
+## Add the supplementary variable, Churn
+fviz_add(p, res.pcamix$quali$contrib,
+         col.var = 'cos2')
+
+# ```
+
+
+```{r sessioninfo}
+sessionInfo()
+```
+
+```{r Output}
+# Create the output file for the snakemake rule
+
+TEXT_OUTPUT <- snakemake@output[["multivariate_analyses_output"]]
+
+output_file<-file(TEXT_OUTPUT)
+writeLines(c("Rules multivariate analyses finished"), output_file)
+close(output_file)
+```

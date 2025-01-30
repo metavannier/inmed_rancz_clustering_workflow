@@ -1,0 +1,23 @@
+channels :
+    - r
+    - conda-forge
+    - bioconda
+dependencies:
+    - conda-forge::r-base
+    - r-ggplot2
+    - r-reshape2
+    - r-ggsignif
+    - r-caret
+    - r-rann
+    - conda-forge::r-pcamixdata
+    # FAMD analyses
+    - conda-forge::r-factominer
+    - r-factoextra
+    - conda-forge::r-plotly
+    - conda-forge::r-gridextra
+    # For visualizing workflows
+    - graphviz
+    - xorg-libxrender
+    - xorg-libxpm
+    - conda-forge::r-rmarkdown
+    - conda-forge::r-tidyverse
