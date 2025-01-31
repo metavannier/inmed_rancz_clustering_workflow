@@ -5,6 +5,9 @@ rule multivariate_analyses:
     output:
         multivariate_analyses_output = expand(OUTPUTDIR + "multivariate_analyses/multivariate_analyses_output.txt"),
 
+    params:
+        test = config["normality"]["test"],
+
     conda:
         CONTAINER + "multivariate_analyses.yaml"
 

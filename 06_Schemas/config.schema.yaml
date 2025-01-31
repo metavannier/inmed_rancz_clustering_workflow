@@ -12,3 +12,10 @@ properties:
         type: string
     required:
       - file
+  normality:
+    type: object
+    properties:
+      test:
+        type: string
+    required:
+      - test

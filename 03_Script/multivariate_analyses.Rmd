@@ -79,19 +79,24 @@ library(tinytex)
 library(knitr)
 library(FactoMineR)
 library(factoextra)
+library(PCAmixdata)
 library(gridExtra)
 library(grid)
 library(plotly)
+library(ggrepel)
+library(randomForest)
+library(randomForestExplainer)
 ```
 
 # Load the data
 
 Summary of your data.
 
-```{r loadData, echo=FALSE, warning=TRUE, message=TRUE}
+```{r loadData, echo=FALSE, warning=FALSE, message=TRUE}
 # Load the 4 times merged dataset
 DATA = snakemake@input[["data"]]
 OUTPUT = snakemake@output[["multivariate_analyses_output"]]
+TEST = snakemake@params[["test"]]
 
 # Load your data
 data <- read.csv(DATA, sep="\t", header=TRUE, row.names=1)
@@ -131,34 +136,57 @@ summary(t_data_final)
 
 # Normality test
 
-Perform a Shapiro-Wilk test to check and print whether each numeric column in t_data_final follows a normal distribution (n = 55)
+Perform a Kolmogorov-Smirnov test to check and print whether each numeric column in t_data_final follows a normal distribution (n > 50)
 
-```{r normality, echo=FALSE, warning=TRUE, message=TRUE}
+```{r normality, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 
 ## Test the normality of the dependant variables
 # Extract numeric columns (excluding "Morphology")
 numeric_columns <- t_data_final[, colnames(t_data_final) != "Morphology"]
 
-# Perform Shapiro-Wilk test on each numeric column
-shapiro_results <- apply(numeric_columns, 2, shapiro.test)
+if (TEST == "shapiro") {
 
-# Identify columns that follow a normal distribution (p > 0.05)
-normal_columns <- sapply(shapiro_results, function(x) x$p.value > 0.05)
+	# Perform Shapiro-Wilk test on each numeric column
+	shapiro_results <- apply(numeric_columns, 2, shapiro.test)
 
-# Filter the numeric columns that follow a normal distribution
-numeric_columns_normal <- numeric_columns[, normal_columns]
+	# Identify columns that follow a normal distribution (p > 0.05)
+	normal_columns <- sapply(shapiro_results, function(x) x$p.value > 0.05)
 
-# Combine back with the "Morphology" column
-t_data_final_filtered <- cbind(Morphology = t_data_final[, "Morphology"], numeric_columns_normal)
+	# Filter the numeric columns that follow a normal distribution
+	numeric_columns_normal <- numeric_columns[, normal_columns]
 
-# Print the result
-cat("Variables that follow a normal distribution:\n")
-print(colnames(numeric_columns_normal))
+	# Combine back with the "Morphology" column
+	t_data_final_filtered <- cbind(Morphology = t_data_final[, "Morphology"], numeric_columns_normal)
+
+	# Print the result
+	cat("Variables that follow a normal distribution:\n")
+	print(colnames(numeric_columns_normal))
+
+} else if (TEST == "kolmogorov") {
+	# Perform Kolmogorov-Smirnov test on each numeric column against a normal distribution
+	ks_results <- apply(numeric_columns, 2, function(x) {
+	ks.test(x, "pnorm", mean = mean(x, na.rm = TRUE), sd = sd(x, na.rm = TRUE))
+	})
+
+	# Identify columns that follow a normal distribution (p > 0.05)
+	normal_columns <- sapply(ks_results, function(x) x$p.value > 0.05)
+
+	# Filter the numeric columns that follow a normal distribution
+	numeric_columns_normal <- numeric_columns[, normal_columns, drop = FALSE]
+
+	# Combine back with the "Morphology" column
+	t_data_final_filtered <- cbind(Morphology = t_data_final[, "Morphology"], numeric_columns_normal)
+
+	# Print the result
+	cat("Variables that follow a normal distribution based on Kolmogorov-Smirnov test:\n")
+	print(colnames(numeric_columns_normal))
+}
+
 ```
 
 # Anova test
 One-way Anova : testing differences between groups based on one independent variable (morphology).
-```{r anova, echo=FALSE, warning=TRUE, message=TRUE}
+```{r anova, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
 
 # Extract column names for quantitative variables
 quantitative_columns <- colnames(t_data_final_filtered)[-1]
@@ -211,12 +239,9 @@ combinations of the original variables to better account for the variance in the
 Inspecting the eigenvalue and percentage variance explained by each PD, using scree plots, 
 can provide insights into the “informativeness” of the original variables.
 
-```{r famd, echo=FALSE, warning=TRUE, message=TRUE}
-data <- t_data_final
-# write.table(data, "./data_table.txt", sep = "\t", row.names = TRUE, col.names = TRUE, quote = FALSE)
-
+```{r famd, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
 # Perform FAMD
-res.famd <- FAMD(data, graph = FALSE)
+res.famd <- FAMD(t_data_final, graph = FALSE)
 
 ## Visualize
 a <- fviz_eig(res.famd,  
@@ -238,13 +263,13 @@ we want to see how “separable” groups of data points are,
 in our case in terms of morphology. To this end, the points are 
 coloured by the variable “morphology”.
 
-```{r ind_obs, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+```{r ind_obs, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 
 ## Concate original data with coordinates for 
 ## the first three principal dimensions
 val_df <- as.data.frame(res.famd$ind)
 
-x <- cbind(data, val_df[1:3])
+x <- cbind(t_data_final, val_df[1:3])
 
 ## Plot
 plot_ly(x, 
@@ -314,34 +339,101 @@ other variables without including it in the original analysis.
 This is useful as most downstream analyses would try to predict Morphology.
 
 ```{r squared, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
-## Import library
-library(PCAmixdata)
 ## Split quantitative and qualitative variables
-split <- splitmix(data)
+split <- splitmix(t_data_final)
 res.pcamix <- PCAmix(X.quanti=split$X.quanti, X.quali=split$X.quali,  
                      graph=FALSE)
 
-# X1sup <- data[,1,drop=FALSE]
-# res.sup <- supvar(res.pcamix,X.quanti.sup = NULL, X.quali.sup = X1sup,rename.level=TRUE)
+X1sup <- t_data_final[,1,drop=FALSE]
+res.sup <- supvar(res.pcamix,X.quanti.sup = NULL, X.quali.sup = X1sup,rename.level=FALSE)
 
-print(res.pcamix$quali$contrib)
-
-
-# print(res.sup$quanti$cos2[,1:2])
-# print(res.sup$levels.sup$cos2[,1:2])
-
-
+print(res.pcamix)
 ## Colour indiv obs by their squared loading
 p <- fviz_famd_var(res.famd, 'var', 
                    axes = c(1, 2),
                    col.var = 'cos2')
-## Add the supplementary variable, Churn
-fviz_add(p, res.pcamix$quali$contrib,
+
+par(mar = c(3,1,1,1))
+fviz_add(p, res.sup$levels.sup$cos2,
          col.var = 'cos2')
+par(xpd = TRUE)
+```
 
-# ```
+# Varimax rotation
+
+To further facilitate interpretation of the relationships between variables and PCs, 
+additional rotation can be applied to PCs to result in high factor loadings for a 
+few variables and low factor loadings for the rest. In other words, a small number 
+of variables will become highly correlated with each PC. 
+
+```{r varimax, echo=FALSE, warning=TRUE, message=TRUE, eval=FALSE}
+## Apply varimax rotation to the first two PCs
+res.pcarot <- PCArot(res.pcamix, dim=2,
+                     graph=FALSE)
+
+## Plot
+par(mar = c(3,0.5,0.5,0.5))
+plot(res.pcarot, choice="sqload",coloring.var=TRUE, axes=c(1, 2),srt=-20) 
+par(xpd = TRUE)
+```
+
+# Random Forest
+
+Random Forest is an ensemble learning method used for classification and regression tasks. 
+It is based on the concept of Decision Trees but improves accuracy and reduces overfitting by 
+creating multiple trees and aggregating their predictions.
+
+I remove the variables not selected from the previous steps.
+
+```{r RandomForest, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+# Remove the variables not selected 
+columns_to_remove <- c("tau", "AHP_time", "AP_peak_accomodation_absolute", 
+                       "AP_width_adaptation", "firingrate_2xrheobase", 
+                       "cfADP", "impedance_relative","AP_adaptation","fI_slope")
+t_data_final_filtered <- t_data_final[, !colnames(t_data_final) %in% columns_to_remove]
+
+# Make the training and test data
+train <- t_data_final_filtered %>% sample_frac(0.8)
+test<-anti_join(t_data_final_filtered, train)
+
+set.seed(123) # permet de fixer les paramètres aléatoires de la rf
+rf=randomForest(Morphology~ . , data = train,importance=T,ntree=500)
+rf
+print("We can then check if the default number of trees chosen (ntree=500) was sufficient.")
+plot(rf)
+
+varImpPlot(rf)
+
+importance_frame <- measure_importance(rf)
+print("Visualization of the variables that have the most impact on morphology in our dataset.")
+plot_multi_way_importance(importance_frame, size_measure = "p_value")
 
 
+# # We keep only the top variables
+# columns_to_keep <- c("Morphology","sag_percentage", "iEPSP_summation", "Rin", "AP_threshold", "trough_impedance", "resonant_frequency", "burst_ratio", "iEPSP_peak_1", "RMP")
+# t_data_final_refiltered <- t_data_final[, colnames(t_data_final) %in% columns_to_keep]
+# # Make the training and test data
+# train <- t_data_final_refiltered %>% sample_frac(0.8)
+# test<-anti_join(t_data_final_refiltered, train)
+
+# set.seed(123) # permet de fixer les paramètres aléatoires de la rf
+# rf=randomForest(Morphology~ . , data = train,importance=T,ntree=700)
+# rf
+# plot(rf)
+# varImpPlot(rf)
+
+# importance_frame <- measure_importance(rf)
+# plot_multi_way_importance(importance_frame, size_measure = "p_value")
+
+
+# Model validation
+print("Verification that the created model is relevant by attempting to predict the morphology of the cells in the test dataset.")
+rf.results <- predict(rf,test)
+results <- data.frame(actual = test$Morphology, prediction = rf.results)
+results
+
+
+```
 ```{r sessioninfo}
 sessionInfo()
 ```

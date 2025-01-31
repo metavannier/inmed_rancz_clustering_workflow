@@ -10,11 +10,15 @@ dependencies:
     - r-caret
     - r-rann
     - conda-forge::r-pcamixdata
+    - conda-forge::r-ggrepel
     # FAMD analyses
     - conda-forge::r-factominer
     - r-factoextra
     - conda-forge::r-plotly
     - conda-forge::r-gridextra
+    # Random Forest
+    - conda-forge::r-randomforest
+    - r-randomforestexplainer
     # For visualizing workflows
     - graphviz
     - xorg-libxrender

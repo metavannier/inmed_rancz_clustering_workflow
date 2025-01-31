@@ -5,3 +5,6 @@
 data:
     # Data file with parameters in row and cells in column
     file: "control_data.tsv"
+normality:
+    # Test to check the normality of the variables
+    test: "kolmogorov" 
