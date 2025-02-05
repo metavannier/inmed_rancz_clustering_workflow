@@ -25,7 +25,7 @@ OUTPUTDIR = srcdir("05_Output/")
 
 rule all:
 	input:
-		multivariate_analyses_output = expand(OUTPUTDIR + "multivariate_analyses/multivariate_analyses_output.txt"),
+		# multivariate_analyses_output = expand(OUTPUTDIR + "multivariate_analyses/multivariate_analyses_output.txt"),
 
 # ----------------------------------------------
 # Load rules 

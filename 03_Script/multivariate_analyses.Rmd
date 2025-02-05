@@ -386,7 +386,7 @@ creating multiple trees and aggregating their predictions.
 I remove the variables not selected from the previous steps.
 
 ```{r RandomForest, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
-# Remove the variables not selected 
+# Remove the variables not selected in term of variable contribution, correlation circle and ANOVA
 columns_to_remove <- c("tau", "AHP_time", "AP_peak_accomodation_absolute", 
                        "AP_width_adaptation", "firingrate_2xrheobase", 
                        "cfADP", "impedance_relative","AP_adaptation","fI_slope")
@@ -408,30 +408,53 @@ importance_frame <- measure_importance(rf)
 print("Visualization of the variables that have the most impact on morphology in our dataset.")
 plot_multi_way_importance(importance_frame, size_measure = "p_value")
 
-
-# # We keep only the top variables
-# columns_to_keep <- c("Morphology","sag_percentage", "iEPSP_summation", "Rin", "AP_threshold", "trough_impedance", "resonant_frequency", "burst_ratio", "iEPSP_peak_1", "RMP")
-# t_data_final_refiltered <- t_data_final[, colnames(t_data_final) %in% columns_to_keep]
-# # Make the training and test data
-# train <- t_data_final_refiltered %>% sample_frac(0.8)
-# test<-anti_join(t_data_final_refiltered, train)
-
-# set.seed(123) # permet de fixer les paramètres aléatoires de la rf
-# rf=randomForest(Morphology~ . , data = train,importance=T,ntree=700)
-# rf
-# plot(rf)
-# varImpPlot(rf)
-
-# importance_frame <- measure_importance(rf)
-# plot_multi_way_importance(importance_frame, size_measure = "p_value")
-
-
 # Model validation
 print("Verification that the created model is relevant by attempting to predict the morphology of the cells in the test dataset.")
 rf.results <- predict(rf,test)
 results <- data.frame(actual = test$Morphology, prediction = rf.results)
 results
+# Calculate the number of correct predictions
+correct_predictions <- sum(results$actual == results$prediction)
+# Calculate the total number of predictions
+total_predictions <- nrow(results)
+# Calculate the percentage of correct predictions
+accuracy_percentage <- (correct_predictions / total_predictions) * 100
+# Print the result
+print(paste0(accuracy_percentage, "% of good predictions"))
 
+
+# We keep only the top variables
+filtered_variables <- c("Morphology", as.character(importance_frame$variable[importance_frame$accuracy_decrease > 0.003]))
+t_data_final_refiltered <- t_data_final[, colnames(t_data_final) %in% filtered_variables]
+
+# Make the training and test data
+train_2 <- t_data_final_refiltered %>% sample_frac(0.8)
+test_2 <- anti_join(t_data_final_refiltered, train)
+
+set.seed(123) # permet de fixer les paramètres aléatoires de la rf
+
+rf_2=randomForest(Morphology~ . , data = train_2 ,importance=T,ntree=500)
+rf_2
+plot(rf_2)
+varImpPlot(rf_2)
+
+importance_frame_2 <- measure_importance(rf_2)
+plot_multi_way_importance(importance_frame_2, size_measure = "p_value")
+
+
+# Second model validation
+print("Verification that the created model is relevant by attempting to predict the morphology of the cells in the test dataset.")
+rf.results_2 <- predict(rf_2,test_2)
+results_2 <- data.frame(actual = test_2$Morphology, prediction = rf.results_2)
+results_2
+# Calculate the number of correct predictions
+correct_predictions <- sum(results_2$actual == results_2$prediction)
+# Calculate the total number of predictions
+total_predictions <- nrow(results_2)
+# Calculate the percentage of correct predictions
+accuracy_percentage <- (correct_predictions / total_predictions) * 100
+# Print the result
+print(paste0(accuracy_percentage, "% of good predictions"))
 
 ```
 ```{r sessioninfo}
