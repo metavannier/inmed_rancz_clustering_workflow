@@ -59,7 +59,7 @@ output:
   })
 </script>
 
-# This report present analyses to select the most relevant quantitative variables for clustering that would correspond to morphological classes.
+This report present analyses to select the most relevant quantitative variables for clustering that would correspond to morphological classes.
 
 ```{r setup, warnings=F}
 knitr::opts_chunk$set(echo = TRUE, error = TRUE)
@@ -86,6 +86,10 @@ library(plotly)
 library(ggrepel)
 library(randomForest)
 library(randomForestExplainer)
+library(cluster)
+library(dplyr)
+library(mclust)
+library(dendextend)
 ```
 
 # Load the data
@@ -457,7 +461,136 @@ accuracy_percentage <- (correct_predictions / total_predictions) * 100
 print(paste0(accuracy_percentage, "% of good predictions"))
 
 ```
+
+# Optimal Number of Clusters
+
+The Elbow Method is a technique used to determine the optimal number of clusters in unsupervised clustering (e.g., k-means). 
+It works by plotting the within-cluster sum of squares (WCSS) against the number of clusters. 
+The "elbow" point, where the WCSS starts to decrease more slowly, indicates the optimal number of clusters. 
+This point balances the trade-off between minimizing WCSS and avoiding overfitting.
+
+```{r elbow, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+data.scaled <- scale(t_data_final_refiltered[,-1])
+
+### Elbow method (look at the knee)
+# Elbow method for kmeans
+fviz_nbclust(data.scaled, kmeans, method = "wss") + 
+  geom_vline(xintercept = 4, linetype = 2)  # Check if 4 clusters (morphological classes) is optimal
+```
+
+The Silhouette Method evaluates the quality of clustering by measuring how similar an object is to its own cluster compared to other clusters. 
+It calculates a silhouette score for each data point, ranging from -1 to 1. A score close to 1 indicates the object is well-matched to 
+its cluster and poorly matched to others. The optimal number of clusters is chosen by maximizing the average silhouette score across all points.
+
+```{r silhouette, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+set.seed(123)
+k <- 4  # Nombre de clusters
+km_res <- kmeans(data.scaled, centers = k, nstart = 25)
+
+sil_km <- silhouette(km_res$cluster, dist(data.scaled ))
+fviz_silhouette(sil_km) 
+
+# Average silhouette for kmeans
+fviz_nbclust(data.scaled, kmeans, method = "silhouette")
+```
+
+# Unsupervised Clustering
+
+Unsupervised Clustering using the selected parameters to explore relationships between morphology and physiology, as well as potential subclusters within the 4 morphological classes
+
+Partitioning clustering with kmeans
+
+```{r kmeans, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+
+#  1. Standardize the data (excluding the first column - morphology)
+data_scaled <- scale(t_data_final_refiltered[,-1])
+
+# 2. Perform k-means clustering (with k = 4)
+km_res <- kmeans(data_scaled, centers = 4, nstart = 25)
+
+# Save the original tab
+data_for_kmeans <- t_data_final_refiltered
+
+# 3. Add clustering results and morphology labels to the dataset
+data_for_kmeans$cluster <- as.factor(km_res$cluster)  # Cluster assignment
+data_for_kmeans$morphology <- as.factor(data_for_kmeans[, 1])  # Morphology info
+
+# 4. Define color palette for morphology
+color_palette <- c("#00AFBB", "#E7B800", "#FC4E07", "#2E9FDF")
+names(color_palette) <- levels(data_for_kmeans$morphology)
+
+# 5. Compute PCA for visualization
+pca_res <- prcomp(data_scaled, scale = TRUE)  # Perform PCA
+
+# 6. Convert PCA results into a dataframe for plotting
+pca_data <- as.data.frame(pca_res$x)  # Extract PCA coordinates
+pca_data$morphology <- data_for_kmeans$morphology  # Add morphology labels
+pca_data$cluster <- data_for_kmeans$cluster  # Add k-means cluster labels
+
+# 7. PCA Scatter Plot: Colors by Morphology, Ellipses by Cluster
+ggplot(pca_data, aes(x = PC1, y = PC2, color = morphology)) +
+  geom_point(size = 3) +  # Points are colored by morphology
+  stat_ellipse(aes(group = cluster), linetype = "dashed", color = "black") +  # Dashed ellipses for clusters
+  scale_color_manual(values = color_palette) +  # Apply morphology colors
+  labs(title = "PCA of K-Means Clustering",
+       color = "Morphology", 
+       subtitle = "Ellipses show K-Means clusters") +
+  theme_minimal() +  # Clean theme
+  theme(legend.position = "right")  # Move legend to the right
+```
+
+Hierarchical clustering
+
+```{r HierarchicalClustering, fig.width=12, fig.height=10, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+# List of clustering methods to iterate over
+# clustering_methods <- c("ward.D", "ward.D2", "single", "complete", 
+#                         "average", "mcquitty", "median", "centroid")
+
+# clustering_methods <- c("euclidean", "maximum", "manhattan", "canberra", "binary", "minkowski")
+
+# Compute distance matrix
+data_dist <- dist(t_data_final_refiltered[, -1], method = "canberra")
+
+# Extract morphology information (first column)
+morphology_labels <- as.factor(t_data_final_refiltered[, 1])
+
+# Define color palette for morphology categories
+color_palette <- c("#00AFBB", "#E7B800", "#FC4E07", "#2E9FDF")
+names(color_palette) <- levels(morphology_labels)
+
+num_cluster <- 4
+
+# Perform hierarchical clustering with the current method
+res <- hclust(data_dist, method = "ward.D2")
+  
+# Reorder morphology labels to match clustering order
+ordered_labels <- morphology_labels[res$order]
+  
+# Convert reordered morphology labels to corresponding colors
+label_colors <- color_palette[ordered_labels]
+  
+# Create a new plotting page to avoid overlap
+grid.newpage()
+  
+# Adjust plot layout and margins
+par(mfrow = c(1, 2), mar = c(4, 2, 2, 8))  # Increase margin for labels
+  
+# Plot dendrogram with black branches and colored labels
+print(fviz_dend(res, k= num_cluster, rect = TRUE, rect_fill = TRUE, rect_border = "black", cex = 0.6,
+                labels_track_height = 1.5,  
+                label_cols = label_colors,
+                k_colors = "black",
+                main = "Dendrogram - Method: Ward.D2"))  # Add title
+# Second plot: Empty plot for legend
+plot.new()
+legend("top", legend = levels(morphology_labels), fill = color_palette, 
+       cex = 0.8, bty = "n", title = "Morphology Categories")
+```
+
+
 ```{r sessioninfo}
+t_data_final_refiltered
 sessionInfo()
 ```
 

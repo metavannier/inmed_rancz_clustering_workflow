@@ -19,9 +19,15 @@ dependencies:
     # Random Forest
     - conda-forge::r-randomforest
     - r-randomforestexplainer
+    # Clustering
+    - r-cluster
+    - r-dplyr
+    - r-mclust
+    - r-dendextend
     # For visualizing workflows
     - graphviz
     - xorg-libxrender
     - xorg-libxpm
     - conda-forge::r-rmarkdown
     - conda-forge::r-tidyverse
+
