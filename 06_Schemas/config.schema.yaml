@@ -10,6 +10,8 @@ properties:
     properties:
       file:
         type: string
+      mutant_file:
+        type: string
     required:
       - file
   normality:
@@ -19,3 +21,10 @@ properties:
         type: string
     required:
       - test
+  variables:
+    type: object
+    preperties:
+      notselected:
+        type: string
+    required:
+      - notselected

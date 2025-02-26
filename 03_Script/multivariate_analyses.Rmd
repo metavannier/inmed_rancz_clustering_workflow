@@ -59,13 +59,13 @@ output:
   })
 </script>
 
-This report present analyses to select the most relevant quantitative variables for clustering that would correspond to morphological classes.
+This report present analyses to select the most relevant quantitative variables for clustering that would correspond to morphological classes.  
 
 ```{r setup, warnings=F}
 knitr::opts_chunk$set(echo = TRUE, error = TRUE)
 ```
 
-```{r loadLibraries, echo=TRUE, warning=TRUE, message=TRUE}
+```{r loadLibraries, echo=FALSE, warning=FALSE, message=FALSE}
 
 # Loading library
 library(ggplot2)
@@ -92,15 +92,19 @@ library(mclust)
 library(dendextend)
 ```
 
-# Load the data
+# Select the most informative variables for clustering/prediction
+
+## Load the data
 
 Summary of your data.
 
-```{r loadData, echo=FALSE, warning=FALSE, message=TRUE}
+```{r loadData, echo=FALSE, warning=FALSE, message=FALSE}
 # Load the 4 times merged dataset
 DATA = snakemake@input[["data"]]
+MUTANT_DATA = snakemake@input[["mutant_data"]]
 OUTPUT = snakemake@output[["multivariate_analyses_output"]]
 TEST = snakemake@params[["test"]]
+VARIABLESNOTSELECTED = snakemake@params[["VariablesNotSelected"]]
 
 # Load your data
 data <- read.csv(DATA, sep="\t", header=TRUE, row.names=1)
@@ -138,7 +142,7 @@ summary(t_data_final)
 
 ```
 
-# Normality test
+## Normality test
 
 Perform a Kolmogorov-Smirnov test to check and print whether each numeric column in t_data_final follows a normal distribution (n > 50)
 
@@ -188,9 +192,9 @@ if (TEST == "shapiro") {
 
 ```
 
-# Anova test
-One-way Anova : testing differences between groups based on one independent variable (morphology).
-```{r anova, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+## Anova test
+One-way Anova (Analysis of Variance) : testing differences between groups based on one independent variable (morphology).
+```{r anova, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 
 # Extract column names for quantitative variables
 quantitative_columns <- colnames(t_data_final_filtered)[-1]
@@ -226,10 +230,9 @@ t_data_final_relevant <- t_data_final_filtered[, c("Morphology", relevant_column
 # Print results
 cat("Relevant columns for clustering:\n")
 print(relevant_columns)
-
 ```
 
-# Dimensionality Reduction with FAMD
+## Dimensionality Reduction with FAMD
 
 Factor analysis of mixed data (FAMD) is a principal component method
 dedicated to analyze a data set containing both quantitative and qualitative
@@ -243,7 +246,7 @@ combinations of the original variables to better account for the variance in the
 Inspecting the eigenvalue and percentage variance explained by each PD, using scree plots, 
 can provide insights into the “informativeness” of the original variables.
 
-```{r famd, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+```{r famd, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 # Perform FAMD
 res.famd <- FAMD(t_data_final, graph = FALSE)
 
@@ -258,7 +261,7 @@ grid.arrange(a, b, ncol=2)
 
 ```
 
-# Plot individual observations in new feature space
+## Plot individual observations in new feature space
 
 We can now visualize the individual data points in the 
 new feature space created by the first three, and thus 
@@ -284,7 +287,7 @@ plot_ly(x,
 
 ```
 
-# Variable contribution
+## Variable contribution
 
 Contribution describes how much a variable accounts for the 
 total variation captured by a given PD.
@@ -297,7 +300,7 @@ The red dashed line indicates the expected average contribution
 in the dataset). So variables meeting the cut-off would be considered 
 as important in contributing to the PD.
 
-```{r contribution, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+```{r contribution, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 
 print("Visualization of the contribution of different modalities to the axis with the most amont of variance.")
 
@@ -308,7 +311,7 @@ fviz_contrib(res.famd, "var", axes = 2)
 
 ```
 
-# Correlation circle
+## Correlation circle
 
 As principal dimensions are linear combinations of the original variables,
 understanding their relationships can help to identify
@@ -322,17 +325,17 @@ This provides a measure of the proportion of variance in a variable that is
 captured by a particular PD. For each variable, the sum of its squared loading 
 across all PDs equals to 1.
 
-```{r correlation, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+```{r correlation, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 
 quanti.var <- get_famd_var(res.famd, "quanti.var")
 
 fviz_famd_var(res.famd, "quanti.var", col.var = "contrib", 
-             gradient.cols = c("#00AFBB", "#E7B800", "#FC4E07"),
+             gradient.cols = c("#0c8320", "#E7B800", "#FC4E07"),
              repel = TRUE)
 
 ```
 
-# Squared loading Plot
+## Squared loading Plot
 
 Squared loading plots allow us to visualize qualitative and quantitative 
 variables together in the new feature space. 
@@ -342,7 +345,7 @@ a supplementary variable, thereby seeing its relationship with
 other variables without including it in the original analysis. 
 This is useful as most downstream analyses would try to predict Morphology.
 
-```{r squared, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+```{r squared, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 ## Split quantitative and qualitative variables
 split <- splitmix(t_data_final)
 res.pcamix <- PCAmix(X.quanti=split$X.quanti, X.quali=split$X.quali,  
@@ -363,37 +366,21 @@ fviz_add(p, res.sup$levels.sup$cos2,
 par(xpd = TRUE)
 ```
 
-# Varimax rotation
-
-To further facilitate interpretation of the relationships between variables and PCs, 
-additional rotation can be applied to PCs to result in high factor loadings for a 
-few variables and low factor loadings for the rest. In other words, a small number 
-of variables will become highly correlated with each PC. 
-
-```{r varimax, echo=FALSE, warning=TRUE, message=TRUE, eval=FALSE}
-## Apply varimax rotation to the first two PCs
-res.pcarot <- PCArot(res.pcamix, dim=2,
-                     graph=FALSE)
-
-## Plot
-par(mar = c(3,0.5,0.5,0.5))
-plot(res.pcarot, choice="sqload",coloring.var=TRUE, axes=c(1, 2),srt=-20) 
-par(xpd = TRUE)
-```
-
-# Random Forest
+## Random Forest
 
 Random Forest is an ensemble learning method used for classification and regression tasks. 
 It is based on the concept of Decision Trees but improves accuracy and reduces overfitting by 
 creating multiple trees and aggregating their predictions.
 
-I remove the variables not selected from the previous steps.
+I remove the variables not selected from the previous steps :  
 
-```{r RandomForest, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
+"tau", "AHP_time", "AP_peak_accomodation_absolute", "AP_width_adaptation", "firingrate_2xrheobase", "cfADP", "impedance_relative","AP_adaptation","fI_slope"  
+
+I build a training dataset (80% of the normal dataset) and the test dataset.
+
+```{r RandomForest, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 # Remove the variables not selected in term of variable contribution, correlation circle and ANOVA
-columns_to_remove <- c("tau", "AHP_time", "AP_peak_accomodation_absolute", 
-                       "AP_width_adaptation", "firingrate_2xrheobase", 
-                       "cfADP", "impedance_relative","AP_adaptation","fI_slope")
+columns_to_remove <- c(VariablesNotSelected)
 t_data_final_filtered <- t_data_final[, !colnames(t_data_final) %in% columns_to_remove]
 
 # Make the training and test data
@@ -424,8 +411,9 @@ total_predictions <- nrow(results)
 # Calculate the percentage of correct predictions
 accuracy_percentage <- (correct_predictions / total_predictions) * 100
 # Print the result
-print(paste0(accuracy_percentage, "% of good predictions"))
+print(paste0(accuracy_percentage, "% of good predictions"))  
 
+print("We keep only the top variables : with an accuracy_decrease > 0.003. And retry the RandomForest with these selected variables")  
 
 # We keep only the top variables
 filtered_variables <- c("Morphology", as.character(importance_frame$variable[importance_frame$accuracy_decrease > 0.003]))
@@ -462,7 +450,11 @@ print(paste0(accuracy_percentage, "% of good predictions"))
 
 ```
 
-# Optimal Number of Clusters
+# Unsupervised Clustering
+
+Unsupervised Clustering using the previously selected parameters to explore relationships between morphology and physiology.
+
+## Optimal Number of Clusters
 
 The Elbow Method is a technique used to determine the optimal number of clusters in unsupervised clustering (e.g., k-means). 
 It works by plotting the within-cluster sum of squares (WCSS) against the number of clusters. 
@@ -495,14 +487,9 @@ fviz_silhouette(sil_km)
 fviz_nbclust(data.scaled, kmeans, method = "silhouette")
 ```
 
-# Unsupervised Clustering
+## Partitioning clustering with kmeans
 
-Unsupervised Clustering using the selected parameters to explore relationships between morphology and physiology, as well as potential subclusters within the 4 morphological classes
-
-Partitioning clustering with kmeans
-
-```{r kmeans, echo=FALSE, warning=TRUE, message=TRUE, eval=TRUE}
-
+```{r kmeans, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 #  1. Standardize the data (excluding the first column - morphology)
 data_scaled <- scale(t_data_final_refiltered[,-1])
 
@@ -517,7 +504,7 @@ data_for_kmeans$cluster <- as.factor(km_res$cluster)  # Cluster assignment
 data_for_kmeans$morphology <- as.factor(data_for_kmeans[, 1])  # Morphology info
 
 # 4. Define color palette for morphology
-color_palette <- c("#00AFBB", "#E7B800", "#FC4E07", "#2E9FDF")
+color_palette <- c("#0c8320", "#E7B800", "#FC4E07", "#2E9FDF")
 names(color_palette) <- levels(data_for_kmeans$morphology)
 
 # 5. Compute PCA for visualization
@@ -540,7 +527,9 @@ ggplot(pca_data, aes(x = PC1, y = PC2, color = morphology)) +
   theme(legend.position = "right")  # Move legend to the right
 ```
 
-Hierarchical clustering
+## Hierarchical clustering
+
+After manually inspecting the clusters using different distance metrics and clustering methods, I used the Canberra distance and the Ward.D2 method for clustering.  
 
 ```{r HierarchicalClustering, fig.width=12, fig.height=10, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
 # List of clustering methods to iterate over
@@ -556,7 +545,7 @@ data_dist <- dist(t_data_final_refiltered[, -1], method = "canberra")
 morphology_labels <- as.factor(t_data_final_refiltered[, 1])
 
 # Define color palette for morphology categories
-color_palette <- c("#00AFBB", "#E7B800", "#FC4E07", "#2E9FDF")
+color_palette <- c("#0c8320", "#E7B800", "#FC4E07", "#2E9FDF")
 names(color_palette) <- levels(morphology_labels)
 
 num_cluster <- 4
@@ -588,9 +577,120 @@ legend("top", legend = levels(morphology_labels), fill = color_palette,
        cex = 0.8, bty = "n", title = "Morphology Categories")
 ```
 
+# Prediction of the H5-HT dataset
+
+## RandomForest
+
+Prediction of a new dataset using the selected variable and the whole data of the normal dataset with random forest.
+
+```{r randomforest_predict, fig.width=12, fig.height=10, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+
+# Load your data to classified
+mutant_data <- read.csv(MUTANT_DATA, sep="\t", header=TRUE, row.names=1)
+
+# Remove the second column
+mutant_data <- mutant_data[,-1]
+
+# Preserve the "Morphology" row
+morphology_row <- mutant_data["Morphology", , drop = FALSE]
+# Remove the row with the row name "Morphology"
+mutant_data <- mutant_data[!rownames(mutant_data) %in% "Morphology", ]
+# Convert all columns to numeric
+mutant_data[] <- lapply(mutant_data, function(x) as.numeric(as.character(x)))
+preProcess_missingdata <- preProcess(mutant_data, method = 'medianImpute')
+data_mutant_imputed <- predict(preProcess_missingdata, mutant_data)
+
+# Bind the "Morphology" row back with the imputed data
+data_mutant_final <- rbind(morphology_row, data_mutant_imputed)
+
+# Transpose the final data
+t_data_mutant_final <- t(data_mutant_final)
+
+# Convert the transposed data frame to ensure appropriate types
+t_data_mutant_final <- as.data.frame(t_data_mutant_final, stringsAsFactors = FALSE)
+
+# Convert "Morphology" column to factor
+t_data_mutant_final$Morphology <- factor(t_data_mutant_final$Morphology)
+
+# Convert all other columns to numeric
+for (col in colnames(t_data_mutant_final)[colnames(t_data_mutant_final) != "Morphology"]) {
+  t_data_mutant_final[, col] <- as.numeric(t_data_mutant_final[, col])
+}
+
+# Make the training data on  and test data
+train <- t_data_final_refiltered
+test <- t_data_mutant_final
+
+# Keep the same variable 
+test <- test[, colnames(train), drop = FALSE]
+
+set.seed(123) # permet de fixer les paramètres aléatoires de la rf
+rf_pred=randomForest(Morphology~ . , data = train,importance=T,ntree=500)
+
+rf_pred.results <- predict(rf_pred,test)
+results_pred <- data.frame(actual = test$Morphology, prediction = rf_pred.results)
+results_pred
+
+# Calculate the number of correct predictions
+correct_predictions_2 <- sum(results_pred$actual == results_pred$prediction)
+# Calculate the total number of predictions
+total_predictions_2 <- nrow(results_pred)
+# Calculate the percentage of correct predictions
+accuracy_percentage_2 <- (correct_predictions_2 / total_predictions_2) * 100
+# Print the result
+print(paste0(accuracy_percentage_2, "% of good predictions"))
+
+# Calculate prediction distribution for all classes
+prediction_summary <- table(results_pred$actual, results_pred$prediction)
+prediction_percentages <- prop.table(prediction_summary, 1) * 100
+
+# Print prediction percentages
+print("Confusion matrix")
+print(prediction_percentages)
+```
+
+## Unsupervised Clustering of 5-HT
+
+Unsupervised Clustering of 5-HT data using the selected parameters to explore relationships between morphology and physiology.
+
+```{r HierarchicalClustering_prediction, fig.width=12, fig.height=10, echo=FALSE, warning=FALSE, message=FALSE, eval=TRUE}
+# Compute distance matrix
+data_dist <- dist(t_data_mutant_final[, -1], method = "canberra")
+
+# Extract morphology information (first column)
+morphology_labels_2 <- as.factor(results_pred$actual)
+
+# Define color palette for morphology categories
+color_palette <- c("#0c8320", "#E7B800", "#FC4E07", "#2E9FDF")
+names(color_palette) <- levels(morphology_labels)
+
+num_cluster <- 4
+
+# Perform hierarchical clustering with the current method
+res <- hclust(data_dist, method = "ward.D2")
+
+# Reorder morphology labels to match clustering order
+ordered_labels_2 <- morphology_labels_2[res$order]
+
+# Convert reordered morphology labels to corresponding colors
+label_colors_2 <- color_palette[ordered_labels_2]
+
+# Create a new plotting page to avoid overlap
+grid.newpage()
+  
+# Plot dendrogram with black branches and colored labels
+print(fviz_dend(res, k= num_cluster, rect = TRUE, rect_fill = TRUE, rect_border = "black", cex = 0.6,
+                labels_track_height = 1.5,  
+                label_cols = label_colors_2,
+                k_colors = "black",
+                main = "Dendrogram - Method: Ward.D2"))  # Add title
+# Second plot: Empty plot for legend
+plot.new()
+legend("top", legend = levels(morphology_labels_2), fill = color_palette, 
+       cex = 0.8, bty = "n", title = "Morphology Categories")
+```
 
 ```{r sessioninfo}
-t_data_final_refiltered
 sessionInfo()
 ```
 

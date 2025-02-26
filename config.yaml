@@ -5,6 +5,11 @@
 data:
     # Data file with parameters in row and cells in column
     file: "control_data.tsv"
+    mutant_file: "5-HT_data.tsv"
 normality:
     # Test to check the normality of the variables (kolmogorov or shapiro)
     test: "shapiro" 
+variables:
+    # You need to mention the variables that were not selected after the ANOVA test and FAMD analysis. 
+    # The workflow automatically selects the final variables during the Random Forest analysis.
+    notselected: "tau,AHP_time,AP_peak_accomodation_absolute,AP_width_adaptation,firingrate_2xrheobase,cfADP,impedance_relative,AP_adaptation,fI_slope"
