@@ -36,7 +36,7 @@ Configure the workflow according to your needs via editing the files and reposit
 
 - Then execute the workflow locally via
 
-`snakemake --conda-frontend conda --cores 12`
+`snakemake --use-conda --conda-frontend conda --cores 12`
 
 - To run again the workflow, you need to remove the file  05_Output/multivariate_analyses/multivariate_analyses_output.txt
 
